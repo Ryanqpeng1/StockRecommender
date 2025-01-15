@@ -1,14 +1,21 @@
+#1/15/24: still in progress, model accuracy is only 0.48 right now
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Define stock symbols and the time period
-symbols = ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA']  # Example stock symbols
+# define stock symbols and the time period
+symbols = [
+    'AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA', 
+    'META', 'NVDA', 'NFLX', 'PYPL', 'INTC', 
+    'AMD', 'BABA', 'BA', 'WMT', 'DIS', 
+    'TSM', 'V', 'PFE', 'JNJ', 'KO'
+]  # example stock symbols. in later versions, allow the user to input the symbols for companies they are interested in
 start_date = '2024-01-01'
 end_date = '2025-01-01'
 
-# Download historical data
+# download historical data
 def get_stock_data(symbols, start_date, end_date):
     stock_data = {}
     for symbol in symbols:
@@ -16,6 +23,7 @@ def get_stock_data(symbols, start_date, end_date):
     return stock_data
 
 stock_data = get_stock_data(symbols, start_date, end_date)
+
 
 
 def calculate_technical_indicators(data):
@@ -26,55 +34,68 @@ def calculate_technical_indicators(data):
     data['MACD'] = data['Close'].ewm(span=12, adjust=False).mean() - data['Close'].ewm(span=26, adjust=False).mean()
     return data
 
-# Apply technical indicators to all stock data
+# apply technical indicators to all stock data
 for symbol in stock_data:
     stock_data[symbol] = calculate_technical_indicators(stock_data[symbol])
 
-def prepare_data_for_training(data, target_column='Close', look_back=5):
+def prepare_data_for_training(stock_data, ticker, target_column='Close', look_back=5):
+    # select the stock data for the given ticker
+    data = stock_data[ticker]
+    
     X, y = [], []
+    
+    # ensure that there are no NaN values in the target column
+    data = data.dropna(subset=[(target_column, ticker)])
+
     for i in range(look_back, len(data)):
-        X.append(data.iloc[i-look_back:i].drop(columns=[target_column]))
-        
-        # Fixing the comparison by directly comparing the last value with the previous one
-        if data[target_column].iloc[i] > data[target_column].iloc[i-1]:
+        X.append(data.iloc[i-look_back:i].drop(columns=[(target_column, ticker)]))
+
+        # Access scalar values for comparison
+        current_price = data[(target_column, ticker)].iloc[i]
+        previous_price = data[(target_column, ticker)].iloc[i-1]
+
+        if current_price > previous_price:
             y.append(1)  # Buy
         else:
             y.append(0)  # Hold/Sell
+
     return np.array(X), np.array(y)
 
+# example usage with any ticker:
+ticker = 'AAPL'  # change to any stock symbol present in stock_data
+X, y = prepare_data_for_training(stock_data, ticker)
 
-
-# Prepare training data for one stock (AAPL as an example)
-X, y = prepare_data_for_training(stock_data['AAPL'])
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
-# Split the data into training and testing sets
+# split the data into training and testing sets
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-# Train a Random Forest model
+# train a random forest model
 model = RandomForestClassifier(n_estimators=100, random_state=42)
 model.fit(X_train.reshape(X_train.shape[0], -1), y_train)
 
-# Make predictions on the test set
+# make predictions on the test set
 y_pred = model.predict(X_test.reshape(X_test.shape[0], -1))
 
-# Evaluate the model
+# evaluate the model
 accuracy = accuracy_score(y_test, y_pred)
 print(f"Model Accuracy: {accuracy:.2f}")
 
 def recommend_stocks(stock_data, model):
     recommendations = {}
     for symbol in stock_data:
-        X, _ = prepare_data_for_training(stock_data[symbol])
-        last_data = X[-1].reshape(1, -1)  # Take the last data point for prediction
+        # pass both stock_data and symbol (ticker) to prepare_data_for_training
+        X, _ = prepare_data_for_training(stock_data, symbol)
+        last_data = X[-1].reshape(1, -1)  # take the last data point for prediction
         prediction = model.predict(last_data)
         recommendations[symbol] = 'Buy' if prediction[0] == 1 else 'Hold'
     return recommendations
 
-# Get stock recommendations
+
+# get stock recommendations
 recommendations = recommend_stocks(stock_data, model)
 print("Stock Recommendations:")
 for stock, recommendation in recommendations.items():
@@ -92,5 +113,5 @@ def plot_stock_data(stock_data, symbol):
     plt.legend()
     plt.show()
 
-# Example: Plot stock data for AAPL
+# example: Plot stock data for AAPL
 plot_stock_data(stock_data, 'AAPL')
